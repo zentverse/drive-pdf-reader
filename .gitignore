@@ -1,0 +1,8 @@
+node_modules/
+
+# Extracted PDFs and scratch page images
+output/
+work/
+
+*.log
+.DS_Store

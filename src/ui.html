@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>drive-pdf-reader</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --card: #ffffff;
+        --ink: #14161a;
+        --muted: #5f6672;
+        --line: #e2e5ea;
+        --accent: #2563eb;
+        --accent-ink: #ffffff;
+        --ok: #15803d;
+        --warn: #b45309;
+        --err: #b91c1c;
+        --field: #ffffff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f1115;
+          --card: #171a20;
+          --ink: #e8eaee;
+          --muted: #9aa2ae;
+          --line: #262b33;
+          --accent: #3b82f6;
+          --accent-ink: #ffffff;
+          --ok: #4ade80;
+          --warn: #fbbf24;
+          --err: #f87171;
+          --field: #10131a;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 40px 20px 64px;
+        background: var(--bg);
+        color: var(--ink);
+        font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      .wrap { max-width: 620px; margin: 0 auto; }
+      h1 { font-size: 21px; margin: 0 0 4px; letter-spacing: -0.01em; }
+      .sub { color: var(--muted); font-size: 13.5px; margin: 0 0 26px; }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 16px;
+      }
+      label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+      input[type="text"], input[type="number"] {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--field);
+        color: var(--ink);
+        font-size: 14px;
+        font-family: inherit;
+      }
+      input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+      button {
+        font: inherit;
+        font-weight: 600;
+        border: 0;
+        border-radius: 8px;
+        padding: 11px 18px;
+        background: var(--accent);
+        color: var(--accent-ink);
+        cursor: pointer;
+      }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      button.secondary { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+      .row { display: flex; gap: 10px; align-items: flex-end; margin-top: 14px; }
+      .row > div { flex: 1; }
+      details { margin-top: 14px; }
+      summary { cursor: pointer; font-size: 13px; color: var(--muted); user-select: none; }
+      .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+      .check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--ink); }
+      .check input { width: 16px; height: 16px; accent-color: var(--accent); }
+      .hidden { display: none !important; }
+      .status { font-size: 13.5px; color: var(--muted); margin-bottom: 10px; min-height: 20px; }
+      .bar { height: 6px; background: var(--line); border-radius: 99px; overflow: hidden; }
+      .bar > i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width 0.2s; }
+      .pct { font-size: 12px; color: var(--muted); margin-top: 8px; font-variant-numeric: tabular-nums; }
+      .doc { font-weight: 600; font-size: 15px; margin-bottom: 2px; word-break: break-word; }
+      .meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+      .note { font-size: 13px; padding: 10px 12px; border-radius: 8px; margin-top: 12px; }
+      .note.err { color: var(--err); border: 1px solid currentColor; }
+      .note.warn { color: var(--warn); border: 1px solid currentColor; }
+      .note.ok { color: var(--ok); }
+      .note ul { margin: 6px 0 0; padding-left: 18px; }
+      .foot { font-size: 12px; color: var(--muted); text-align: center; margin-top: 26px; }
+      code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12.5px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>drive-pdf-reader</h1>
+      <p class="sub">Rebuild a view-only Google Drive document as a PDF, then save it wherever you want.</p>
+
+      <form class="card" id="form">
+        <label for="url">Google Drive link</label>
+        <input
+          type="text"
+          id="url"
+          placeholder="https://drive.google.com/file/d/.../view"
+          autocomplete="off"
+          spellcheck="false"
+          required
+        />
+
+        <details>
+          <summary>Options</summary>
+          <div class="opts">
+            <div>
+              <label for="width">Width (px)</label>
+              <input type="number" id="width" value="1600" min="200" max="10000" step="100" />
+            </div>
+            <div>
+              <label for="quality">JPEG quality</label>
+              <input type="number" id="quality" value="82" min="1" max="100" />
+            </div>
+            <div>
+              <label for="concurrency">Concurrency</label>
+              <input type="number" id="concurrency" value="8" min="1" max="64" />
+            </div>
+            <div style="display: flex; align-items: flex-end">
+              <label class="check" style="margin: 0 0 10px">
+                <input type="checkbox" id="png" />
+                Lossless PNG (very large)
+              </label>
+            </div>
+          </div>
+        </details>
+
+        <div class="row">
+          <button type="submit" id="go">Extract PDF</button>
+        </div>
+      </form>
+
+      <div class="card hidden" id="progress">
+        <div class="status" id="status">Starting…</div>
+        <div class="bar"><i id="fill"></i></div>
+        <div class="pct" id="pct"></div>
+      </div>
+
+      <div class="card hidden" id="result">
+        <div class="doc" id="docname"></div>
+        <div class="meta" id="docmeta"></div>
+        <div id="notes"></div>
+        <div class="row">
+          <button id="save">Save PDF…</button>
+          <button class="secondary" id="again" type="button">Extract another</button>
+        </div>
+      </div>
+
+      <div class="card note err hidden" id="error"></div>
+
+      <p class="foot">Only extract documents you are permitted to retain.</p>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const form = $('form');
+      let job = null;
+      let source = null;
+
+      const show = (el, on) => el.classList.toggle('hidden', !on);
+      const mb = (n) => (n / 1048576).toFixed(2) + ' MB';
+
+      function reset() {
+        show($('progress'), false);
+        show($('result'), false);
+        show($('error'), false);
+        $('fill').style.width = '0%';
+        $('pct').textContent = '';
+        $('notes').innerHTML = '';
+        job = null;
+      }
+
+      function fail(message) {
+        if (source) source.close();
+        show($('progress'), false);
+        $('error').textContent = message;
+        show($('error'), true);
+        $('go').disabled = false;
+      }
+
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        reset();
+        $('go').disabled = true;
+        show($('progress'), true);
+        $('status').textContent = 'Starting…';
+
+        const params = new URLSearchParams({
+          url: $('url').value.trim(),
+          width: $('width').value,
+          quality: $('quality').value,
+          concurrency: $('concurrency').value,
+          png: $('png').checked ? 'true' : 'false',
+        });
+
+        source = new EventSource('/api/extract?' + params);
+
+        source.onmessage = (ev) => {
+          const d = JSON.parse(ev.data);
+
+          if (d.type === 'status') $('status').textContent = d.message;
+
+          if (d.type === 'document') {
+            $('status').textContent =
+              d.title + ' — ' + d.pages + ' pages at ' + d.renderWidth + 'px';
+          }
+
+          if (d.type === 'progress') {
+            const pct = Math.round((d.done / d.total) * 100);
+            $('fill').style.width = pct + '%';
+            $('pct').textContent = d.done + ' / ' + d.total + ' pages (' + pct + '%)';
+          }
+
+          if (d.type === 'assembling') {
+            $('status').textContent = 'Assembling PDF…';
+            $('fill').style.width = '100%';
+          }
+
+          if (d.type === 'error') fail(d.message);
+
+          if (d.type === 'done') {
+            source.close();
+            job = d;
+            show($('progress'), false);
+
+            $('docname').textContent = d.filename;
+            $('docmeta').textContent =
+              (d.pageCount !== null ? d.pageCount + ' pages · ' : '') +
+              mb(d.bytes) +
+              (d.fastPath ? ' · original file from Drive' : '');
+
+            if (!d.ok) {
+              const ul = d.problems.map((p) => '<li>' + p + '</li>').join('');
+              $('notes').innerHTML =
+                '<div class="note warn"><strong>Verification failed.</strong> Saved as ' +
+                '<code>.partial.pdf</code> so you can inspect it.<ul>' + ul + '</ul></div>';
+            } else if (d.problems.length) {
+              const ul = d.problems.map((p) => '<li>' + p + '</li>').join('');
+              $('notes').innerHTML = '<div class="note warn"><ul>' + ul + '</ul></div>';
+            }
+
+            show($('result'), true);
+            $('go').disabled = false;
+          }
+        };
+
+        source.onerror = () => {
+          if (!job) fail('Lost connection to the extractor. Is the server still running?');
+        };
+      });
+
+      $('save').addEventListener('click', async () => {
+        if (!job) return;
+        const res = await fetch('/api/file/' + job.jobId);
+        if (!res.ok) return fail('That result expired. Extract it again.');
+        const blob = await res.blob();
+
+        // The native Save As dialog. Chrome and Edge on localhost support this; anything
+        // else falls back to an ordinary download into the browser's download folder.
+        if (window.showSaveFilePicker) {
+          try {
+            const handle = await window.showSaveFilePicker({
+              suggestedName: job.filename,
+              types: [{ description: 'PDF document', accept: { 'application/pdf': ['.pdf'] } }],
+            });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            $('save').textContent = 'Saved ✓';
+            setTimeout(() => ($('save').textContent = 'Save PDF…'), 2500);
+            return;
+          } catch (err) {
+            if (err && err.name === 'AbortError') return; // user cancelled
+          }
+        }
+
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = job.filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
+
+      $('again').addEventListener('click', () => {
+        reset();
+        $('url').value = '';
+        $('url').focus();
+      });
+    </script>
+  </body>
+</html>
