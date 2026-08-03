@@ -1,10 +1,12 @@
 # drive-pdf-reader
 
-Rebuilds a local PDF from a Google Drive document you can **view but not download**.
+Creates local PDFs from either a Google Drive document you can **view but not download**
+or the unique visual frames in an uploaded video.
 
-Give it a Drive link, it reconstructs the document page by page from Drive's own renderer
-and hands you a PDF — either through a small browser UI with a native Save-As dialog, or
-from the command line.
+Give it a Drive link and it reconstructs the document page by page from Drive's own renderer.
+Give it one or more videos and it samples the recordings, removes repeated visual states across
+the complete selection, and creates one PDF page per unique slide or scene. The browser UI provides a native Save-As dialog; Drive
+documents can also be processed from the command line.
 
 > **Before you use it:** only extract documents you are permitted to retain a copy of.
 > View-only is sometimes a deliberate retention control, not just a convenience setting.
@@ -16,6 +18,7 @@ from the command line.
 - [Requirements](#requirements)
 - [Install](#install)
 - [Running the UI](#running-the-ui)
+- [Video to PDF](#video-to-pdf)
 - [Running from the command line](#running-from-the-command-line)
 - [Size and quality](#size-and-quality)
 - [How it works](#how-it-works)
@@ -33,10 +36,11 @@ from the command line.
 | **Node.js** | 20 or newer. Tested on 24.13.1. |
 | **npm** | Any recent version. Tested on 11.8.0. |
 | **Chromium** | Installed through Playwright (see below). Used for ~3 seconds per run. |
+| **FFmpeg** | Bundled through `ffmpeg-static`; no system FFmpeg installation is required. |
 | **Browser** | Chrome or Edge for the native Save-As dialog. Firefox works but falls back to an ordinary download. |
 | **OS** | Windows, macOS or Linux. Developed and tested on Windows 11. |
 | **Network** | Outbound access to `drive.google.com`. |
-| **Disk** | ~110 MB for `node_modules`, plus ~150 MB for Chromium (shared across all Playwright projects on the machine). |
+| **Disk** | ~185 MB for `node_modules` including FFmpeg, plus ~150 MB for Chromium (shared across all Playwright projects on the machine). |
 
 Node 20 is the floor because the code relies on global `fetch`, `node:util`'s `parseArgs`
 and `AbortSignal.timeout`. TypeScript runs directly through `tsx` — there is no build step.
@@ -71,7 +75,8 @@ Silence means success.
 
 ## Running the UI
 
-This is the easier way, and the only way that lets you choose where each PDF is saved.
+This is the easier way, the entry point for video processing, and the only way that lets you
+choose where each PDF is saved.
 
 ```bash
 npm run ui
@@ -86,7 +91,7 @@ drive-pdf-reader UI running at http://127.0.0.1:5174
 
 Your browser opens automatically. If it does not, go to **<http://127.0.0.1:5174>**.
 
-Then:
+The UI has two tabs. On **Drive document**:
 
 1. Paste the Drive link into the box.
 2. *(optional)* Open **Options** to change width, JPEG quality, concurrency, or switch to
@@ -98,6 +103,48 @@ Then:
 
 **Leave the terminal window open** — that is the server. Closing it or pressing Ctrl+C
 stops the UI.
+
+---
+
+## Video to PDF
+
+Open the **Video to PDF** tab, choose or drop one or more videos, and press
+**Create one combined PDF**. Frames are added in the selected file order.
+Before processing, drag files in the ordered list to rearrange them, or use the up/down
+buttons for keyboard and touch-friendly control. The edited order is locked when processing
+starts and becomes the page-group order in the combined PDF.
+The app:
+
+1. uploads each selected file to temporary local storage,
+2. uses the bundled FFmpeg binary to sample each video in order,
+3. compares perceptual signatures and removes repeated visual frames across the full batch,
+4. converts every unique frame into a PDF page, and
+5. offers the finished PDF through the same native Save-As flow as Drive extraction.
+
+The source videos and sampled frame files are deleted automatically after processing. Only the
+finished PDF remains in memory, where it expires after 30 minutes if it is not downloaded.
+
+| Option | Default | Effect |
+|---|---:|---|
+| Sample every | 1 second | Lower values catch slides shown very briefly but take more time. |
+| Change sensitivity | 7 / 10 | Higher values keep subtler visual changes; lower values merge more near-duplicates. |
+| Maximum frame width | 1920 px | Downscales large video frames without enlarging smaller ones. |
+| PDF image quality | 88 | JPEG quality for pages in the resulting PDF. |
+
+Progress is reported as one monotonic three-step workflow: upload, process, then assemble.
+Long durations use human-readable days/hours/minutes/seconds instead of raw second totals.
+The compact progress card keeps only the current stage, video position, completion percentage,
+unique-slide count, and a live remaining-time estimate that updates as processing speed settles.
+
+“Unique” is intentionally visual rather than byte-for-byte. Video compression makes two frames
+of the same slide differ at the pixel level, so exact hashing would preserve thousands of false
+duplicates. The detector combines a difference hash with a downscaled pixel comparison. It also
+compares against every accepted frame from every selected video, so a slide revisited later—or
+repeated in another file—appears only once.
+
+FFmpeg supports a broad range of consumer and professional containers and codecs, including MP4,
+MOV, MKV, WebM, AVI, MPEG/MPG, M4V, WMV, FLV, 3GP, TS/MTS and M2TS. A damaged file, audio-only file,
+encrypted stream, or codec absent from the bundled FFmpeg build will be rejected with an error.
 
 ### Notes on the UI
 
@@ -248,6 +295,10 @@ no PDF, because nobody notices until much later.
 
 - **Folder links are not supported.** Pass individual file links; it tells you so rather
   than half-working.
+- **Video detection is sampled, not frame-by-frame.** A slide visible for less than the selected
+  sample interval can be missed; reduce the interval to `0.5` or `0.25` seconds for fast changes.
+- **Ordinary moving footage produces more pages.** The feature is tuned for presentations,
+  screen recordings, lectures, and other material with repeated stable visuals.
 - **Output is raster.** Text is not selectable and the PDF is not searchable. The page
   images are high enough resolution to OCR well if that is added later.
 - **Viewer watermarks are captured** along with the page — they are part of the render.
@@ -285,6 +336,16 @@ no PDF, because nobody notices until much later.
 | Output much larger than expected | `--png` is on | Drop `--png` |
 | Verification failed, got `.partial.pdf` | Truncated capture, usually an expired token | Re-run; if it repeats, lower `--concurrency` |
 
+### Video processing
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| A short slide is missing | It appeared between samples | Lower **Sample every** to `0.5` or `0.25` seconds |
+| Similar slides were merged | The visual change was below the threshold | Increase **Change sensitivity** |
+| Too many near-identical pages | Cursor movement, animation, or video noise | Lower **Change sensitivity** or increase the sample interval |
+| No video frames were found | Audio-only, damaged, encrypted, or unsupported input | Try a normal player first or transcode the source to MP4/H.264 |
+| Processing takes a long time | Long/high-resolution source or very small sample interval | Use a larger interval or lower maximum frame width |
+
 ### Install
 
 | Symptom | Cause | Fix |
@@ -318,6 +379,8 @@ On PowerShell: `$env:DEBUG=1` first.
 | `src/cli.ts` | Flags, terminal progress, exit codes |
 | `src/server.ts` | Local HTTP, SSE progress, in-memory job store |
 | `src/ui.html` | Browser UI and Save-As handling |
+| `src/video.ts` | FFmpeg sampling, perceptual deduplication, and video PDF assembly |
+| `src/video.test.ts` | End-to-end repeated-scene video test |
 
 `output/` holds finished PDFs from CLI runs, `work/` holds per-page images when
 `--keep-pages` is set. Both are gitignored.
@@ -332,4 +395,5 @@ stages and cannot drift apart.
 | `npm run ui` | Start the browser UI on port 5174 |
 | `npm start -- "<url>"` | Run the CLI |
 | `npm run typecheck` | Typecheck the whole project |
+| `npm test` | Generate a test video and verify repeated scenes are deduplicated |
 | `npm run install:browser` | Install Chromium for Playwright |

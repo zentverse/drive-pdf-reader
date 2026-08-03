@@ -1,9 +1,9 @@
-# Drive View-Only PDF Extractor — Architecture
+# PDF Capture Studio — Architecture
 
-Reconstructs a local PDF from a Google Drive file shared with **view-only** permission,
-by addressing Drive's own page-render endpoint directly.
+Provides two local PDF pipelines: reconstructing a Google Drive file shared with
+**view-only** permission, and converting the unique visual frames in a video to PDF pages.
 
-- **Stack:** TypeScript + Playwright + `pdf-lib` + `sharp` (standalone Node project)
+- **Stack:** TypeScript + Playwright + FFmpeg + `pdf-lib` + `sharp` (standalone Node project)
 - **Reference document:** [159-page sample](https://drive.google.com/file/d/18zM6cKYhTF2MRd0Ml8Vo3rGZTpckOfxd/view)
 - **Location:** `src/`
 
@@ -67,6 +67,8 @@ not an optional one. At `w=1600, q=82` a page lands around 120 KB → ~20 MB tot
 
 ## 3. Pipeline
 
+### 3.1 Drive document pipeline
+
 ```mermaid
 flowchart TD
     A["Drive URL"] --> B["resolve.ts<br/>extract fileId"]
@@ -91,6 +93,37 @@ flowchart TD
     style Z fill:#1e3a5f,color:#fff
     style FOLD fill:#78350f,color:#fff
 ```
+
+### 3.2 Video unique-frame pipeline
+
+```mermaid
+flowchart TD
+    V["Ordered video uploads"] --> TMP["temporary local files"]
+    TMP --> FF["bundled FFmpeg<br/>sample each file sequentially"]
+    FF --> SIG["video.ts<br/>grayscale thumbnail + difference hash"]
+    SIG --> ALL["compare with every accepted frame<br/>across the full batch"]
+    ALL -->|"near duplicate"| DROP["discard"]
+    ALL -->|"visually distinct"| JPG["sharp<br/>JPEG at selected quality"]
+    JPG --> PDF["assemble.ts<br/>one frame per page"]
+    PDF --> MEM["in-memory job<br/>TTL 30 minutes"]
+    MEM --> SAVE["browser Save-As"]
+    TMP -. "finally" .-> CLEAN["delete upload + sampled frames"]
+
+    style DROP fill:#78350f,color:#fff
+    style SAVE fill:#1e3a5f,color:#fff
+    style CLEAN fill:#1b5e20,color:#fff
+```
+
+The detector cannot use exact file hashes because video compression makes adjacent renders of
+an unchanged slide byte-different. Each sampled frame is reduced to a 17×16 grayscale thumbnail
+and a 256-bit horizontal difference hash. A candidate is discarded only when both its structural
+hash distance and mean pixel difference are within sensitivity-derived tolerances. Matching is
+global rather than adjacent-only or file-local, which removes a slide even when it is revisited
+in a later video. First-seen frame order follows the user's selected file order.
+
+Uploads are streamed directly to an OS temporary directory rather than buffered in memory. The
+server deletes the upload and FFmpeg frame directory in `finally` blocks, including failed runs.
+The completed PDF alone enters the existing in-memory job store.
 
 ---
 
@@ -167,6 +200,8 @@ rather than being embedded as garbage.
 | `cli.ts` | Flags, progress, exit codes, non-clobbering output naming | Reporting success on a bad capture |
 | `server.ts` | Local HTTP, SSE progress, in-memory job store | Leaking documents into memory |
 | `ui.html` | Browser UI, native Save-As handling | — |
+| `video.ts` | FFmpeg sampling, perceptual deduplication, PDF hand-off | Duplicate or missing video slides |
+| `video.test.ts` | Synthetic repeated-scene integration test | Regressed global deduplication |
 
 `verify.ts` is deliberately pure and synchronous. It is the last line of defence against
 the tool's worst outcome — handing over a PDF that looks complete and is not.

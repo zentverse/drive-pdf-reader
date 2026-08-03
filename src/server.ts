@@ -1,12 +1,17 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { Transform } from 'node:stream';
+import { pipeline as streamPipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 
 import { extract } from './pipeline.ts';
+import { extractVideoSlidesBatch } from './video.ts';
 import type { RunOptions, VerifyReport } from './types.ts';
+import type { VideoOptions } from './video.ts';
 
 /**
  * Local web UI.
@@ -29,6 +34,8 @@ const DEFAULT_PORT = 5174;
 
 /** Long enough to pick a folder without thinking, short enough to bound memory. */
 const JOB_TTL_MS = 30 * 60_000;
+const UPLOAD_TTL_MS = 60 * 60_000;
+const MAX_VIDEO_BYTES = 10 * 1024 * 1024 * 1024;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,13 +45,39 @@ interface Job {
   createdAt: number;
 }
 
+interface VideoUpload {
+  directory: string;
+  filePath: string;
+  filename: string;
+  bytes: number;
+  createdAt: number;
+  active: boolean;
+}
+
 const jobs = new Map<string, Job>();
+const videoUploads = new Map<string, VideoUpload>();
+
+// Handles the narrow case where a browser closes after upload but before starting extraction.
+const uploadReaper = setInterval(() => void reapExpiredUploads(), 15 * 60_000);
+uploadReaper.unref();
 
 function reapExpiredJobs(): void {
   const cutoff = Date.now() - JOB_TTL_MS;
   for (const [id, job] of jobs) {
     if (job.createdAt < cutoff) jobs.delete(id);
   }
+}
+
+async function reapExpiredUploads(): Promise<void> {
+  const cutoff = Date.now() - UPLOAD_TTL_MS;
+  const removals: Promise<void>[] = [];
+  for (const [id, upload] of videoUploads) {
+    if (upload.createdAt < cutoff && !upload.active) {
+      videoUploads.delete(id);
+      removals.push(fs.promises.rm(upload.directory, { recursive: true, force: true }));
+    }
+  }
+  await Promise.all(removals);
 }
 
 /** Mirrors cli.ts's safeFileName; the download name must survive the same OS rules. */
@@ -76,6 +109,25 @@ function optionsFromQuery(params: URLSearchParams): RunOptions {
     // The browser owns the save, so nothing is written server-side.
     outDir: '',
     keepPages: false,
+  };
+}
+
+function videoOptionsFromQuery(params: URLSearchParams): VideoOptions {
+  const number = (name: string, fallback: number, min: number, max: number): number => {
+    const raw = params.get(name);
+    if (raw === null || raw === '') return fallback;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < min || value > max) {
+      throw new Error(`${name} must be between ${min} and ${max} (got "${raw}").`);
+    }
+    return value;
+  };
+
+  return {
+    sampleSeconds: number('sampleSeconds', 1, 0.25, 30),
+    sensitivity: number('sensitivity', 7, 1, 10),
+    maxWidth: Math.round(number('maxWidth', 1920, 320, 7680)),
+    jpegQuality: Math.round(number('quality', 88, 40, 100)),
   };
 }
 
@@ -136,6 +188,176 @@ async function handleExtract(req: http.IncomingMessage, res: http.ServerResponse
   }
 }
 
+class UploadTooLargeError extends Error {}
+
+function uploadFilename(raw: string | null): string {
+  const cleaned = path
+    .basename(raw ?? '')
+    .replace(/[<>:"|?*\\/\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.slice(0, 200) || 'video';
+}
+
+async function handleVideoUpload(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  url: URL,
+): Promise<void> {
+  if (req.method !== 'POST') {
+    res.writeHead(405, { 'content-type': 'application/json', allow: 'POST' });
+    res.end(JSON.stringify({ error: 'Use POST to upload a video.' }));
+    return;
+  }
+
+  const declaredBytes = Number(req.headers['content-length'] ?? 0);
+  if (declaredBytes > MAX_VIDEO_BYTES) {
+    res.writeHead(413, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Video is larger than the 10 GB local upload limit.' }));
+    return;
+  }
+
+  await reapExpiredUploads();
+  const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'drive-pdf-upload-'));
+  const filePath = path.join(directory, 'upload.video');
+  let bytes = 0;
+
+  const limiter = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      bytes += chunk.byteLength;
+      if (bytes > MAX_VIDEO_BYTES) {
+        callback(new UploadTooLargeError('Video is larger than the 10 GB local upload limit.'));
+        return;
+      }
+      callback(null, chunk);
+    },
+  });
+
+  try {
+    await streamPipeline(req, limiter, fs.createWriteStream(filePath, { flags: 'wx' }));
+    if (bytes === 0) throw new Error('The uploaded file is empty.');
+
+    const id = crypto.randomUUID();
+    const filename = uploadFilename(url.searchParams.get('filename'));
+    videoUploads.set(id, {
+      directory,
+      filePath,
+      filename,
+      bytes,
+      createdAt: Date.now(),
+      active: false,
+    });
+
+    res.writeHead(201, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ uploadId: id, filename, bytes }));
+  } catch (error) {
+    await fs.promises.rm(directory, { recursive: true, force: true });
+    const status = error instanceof UploadTooLargeError ? 413 : 400;
+    const message = error instanceof Error ? error.message : String(error);
+    if (!res.headersSent) {
+      res.writeHead(status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: message }));
+    }
+  }
+}
+
+async function handleVideoExtract(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  url: URL,
+): Promise<void> {
+  const uploadIds = url.searchParams.getAll('uploadId');
+  if (uploadIds.length === 0) {
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'No video uploads were supplied.' }));
+    return;
+  }
+  if (new Set(uploadIds).size !== uploadIds.length) {
+    res.writeHead(400, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'The same video upload was supplied more than once.' }));
+    return;
+  }
+
+  const uploads = uploadIds.map((id) => videoUploads.get(id));
+  if (uploads.some((upload) => !upload)) {
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'One or more video uploads were not found or expired. Upload them again.' }));
+    return;
+  }
+  const readyUploads = uploads.filter((upload): upload is VideoUpload => Boolean(upload));
+  if (readyUploads.some((upload) => upload.active)) {
+    res.writeHead(409, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'One of these videos is already being processed.' }));
+    return;
+  }
+
+  let options: VideoOptions;
+  try {
+    options = videoOptionsFromQuery(url.searchParams);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.writeHead(400, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: message }));
+    return;
+  }
+
+  for (const upload of readyUploads) upload.active = true;
+  res.writeHead(200, {
+    'content-type': 'text/event-stream',
+    'cache-control': 'no-cache',
+    connection: 'keep-alive',
+  });
+
+  let clientGone = false;
+  req.on('close', () => {
+    clientGone = true;
+  });
+
+  try {
+    const result = await extractVideoSlidesBatch(
+      readyUploads.map((upload) => ({ inputPath: upload.filePath, filename: upload.filename })),
+      options,
+      (event) => {
+        if (!clientGone) sseSend(res, event);
+      },
+    );
+
+    reapExpiredJobs();
+    const id = crypto.randomUUID();
+    const filename =
+      result.fileCount === 1
+        ? `${safeFileName(result.title)} - unique frames.pdf`
+        : 'Combined video frames.pdf';
+    jobs.set(id, { bytes: result.pdfBytes, filename, createdAt: Date.now() });
+
+    if (!clientGone) {
+      sseSend(res, {
+        type: 'done',
+        kind: 'video',
+        jobId: id,
+        filename,
+        bytes: result.pdfBytes.byteLength,
+        pageCount: result.uniqueFrames,
+        sampledFrames: result.sampledFrames,
+        durationSeconds: result.durationSeconds,
+        fileCount: result.fileCount,
+        files: result.files,
+        ok: true,
+        problems: [],
+      });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!clientGone) sseSend(res, { type: 'error', message });
+  } finally {
+    for (const uploadId of uploadIds) videoUploads.delete(uploadId);
+    await Promise.all(
+      readyUploads.map((upload) => fs.promises.rm(upload.directory, { recursive: true, force: true })),
+    );
+    res.end();
+  }
+}
+
 function handleFile(res: http.ServerResponse, id: string): void {
   const job = jobs.get(id);
   if (!job) {
@@ -174,6 +396,16 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === '/api/extract') {
     void handleExtract(req, res, url);
+    return;
+  }
+
+  if (url.pathname === '/api/video/upload') {
+    void handleVideoUpload(req, res, url);
+    return;
+  }
+
+  if (url.pathname === '/api/video/extract') {
+    void handleVideoExtract(req, res, url);
     return;
   }
 

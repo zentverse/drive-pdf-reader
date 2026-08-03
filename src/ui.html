@@ -3,15 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>drive-pdf-reader</title>
+    <title>PDF Capture Studio</title>
     <style>
       :root {
-        --bg: #f6f7f9;
+        --bg: #f4f6f8;
         --card: #ffffff;
-        --ink: #14161a;
-        --muted: #5f6672;
-        --line: #e2e5ea;
+        --ink: #15171b;
+        --muted: #606875;
+        --line: #dfe3e8;
         --accent: #2563eb;
+        --accent-soft: #e8f0ff;
         --accent-ink: #ffffff;
         --ok: #15803d;
         --warn: #b45309;
@@ -24,8 +25,9 @@
           --card: #171a20;
           --ink: #e8eaee;
           --muted: #9aa2ae;
-          --line: #262b33;
-          --accent: #3b82f6;
+          --line: #2a2f38;
+          --accent: #4b8df8;
+          --accent-soft: #1c2c49;
           --accent-ink: #ffffff;
           --ok: #4ade80;
           --warn: #fbbf24;
@@ -41,9 +43,30 @@
         color: var(--ink);
         font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       }
-      .wrap { max-width: 620px; margin: 0 auto; }
-      h1 { font-size: 21px; margin: 0 0 4px; letter-spacing: -0.01em; }
-      .sub { color: var(--muted); font-size: 13.5px; margin: 0 0 26px; }
+      .wrap { max-width: 680px; margin: 0 auto; }
+      h1 { font-size: 23px; margin: 0 0 4px; letter-spacing: -0.02em; }
+      .sub { color: var(--muted); font-size: 13.5px; margin: 0 0 22px; }
+      .tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+        padding: 4px;
+        margin-bottom: 16px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: var(--card);
+      }
+      .tab {
+        padding: 10px 12px;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-weight: 650;
+        cursor: pointer;
+      }
+      .tab[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
       .card {
         background: var(--card);
         border: 1px solid var(--line);
@@ -51,9 +74,21 @@
         padding: 20px;
         margin-bottom: 16px;
       }
-      label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
-      input[type="text"], input[type="number"] {
+      .eyebrow {
+        margin: 0 0 5px;
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 750;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      h2 { margin: 0 0 5px; font-size: 18px; letter-spacing: -0.01em; }
+      .intro { margin: 0 0 18px; color: var(--muted); font-size: 13.5px; }
+      label { display: block; font-size: 12.5px; font-weight: 650; color: var(--muted); margin-bottom: 6px; }
+      input[type="text"], input[type="number"], input[type="range"] {
         width: 100%;
+      }
+      input[type="text"], input[type="number"] {
         padding: 10px 12px;
         border: 1px solid var(--line);
         border-radius: 8px;
@@ -62,19 +97,17 @@
         font-size: 14px;
         font-family: inherit;
       }
-      input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
-      button {
+      input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      button.primary, button.secondary {
         font: inherit;
-        font-weight: 600;
-        border: 0;
+        font-weight: 650;
         border-radius: 8px;
         padding: 11px 18px;
-        background: var(--accent);
-        color: var(--accent-ink);
         cursor: pointer;
       }
-      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      button.primary { border: 0; background: var(--accent); color: var(--accent-ink); }
       button.secondary { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
       .row { display: flex; gap: 10px; align-items: flex-end; margin-top: 14px; }
       .row > div { flex: 1; }
       details { margin-top: 14px; }
@@ -82,12 +115,104 @@
       .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
       .check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--ink); }
       .check input { width: 16px; height: 16px; accent-color: var(--accent); }
+      .filebox {
+        display: block;
+        border: 1.5px dashed var(--line);
+        border-radius: 10px;
+        padding: 22px 18px;
+        color: var(--muted);
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 0.15s, background 0.15s;
+      }
+      .filebox:hover, .filebox.drag { border-color: var(--accent); background: var(--accent-soft); }
+      .filebox strong { color: var(--ink); }
+      .filebox input { position: absolute; opacity: 0; pointer-events: none; }
+      .filename { display: block; margin-top: 6px; color: var(--accent); word-break: break-word; }
+      .filelist {
+        display: grid;
+        gap: 6px;
+        margin: 10px 0 0;
+        padding: 0;
+        list-style: none;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .file-row {
+        display: grid;
+        grid-template-columns: 25px 18px minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        min-height: 44px;
+        padding: 6px 8px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--field);
+        transition: border-color 0.12s, background 0.12s, opacity 0.12s;
+      }
+      .file-row.dragging { opacity: 0.45; }
+      .file-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+      .file-row.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+      .file-order {
+        display: grid;
+        place-items: center;
+        width: 25px;
+        height: 25px;
+        border-radius: 99px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 750;
+        font-variant-numeric: tabular-nums;
+      }
+      .file-handle {
+        color: var(--muted);
+        cursor: grab;
+        font-size: 17px;
+        line-height: 1;
+        user-select: none;
+      }
+      .file-row:active .file-handle { cursor: grabbing; }
+      .file-copy { min-width: 0; }
+      .file-name { display: block; overflow: hidden; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; }
+      .file-size { display: block; margin-top: 1px; color: var(--muted); }
+      .file-actions { display: flex; gap: 4px; }
+      .order-button {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1;
+      }
+      .order-button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+      .order-hint { margin: 7px 2px 0; color: var(--muted); font-size: 12px; }
+      .range-head { display: flex; justify-content: space-between; gap: 12px; }
+      .range-head output { color: var(--ink); font-weight: 700; }
+      .hint { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
       .hidden { display: none !important; }
       .status { font-size: 13.5px; color: var(--muted); margin-bottom: 10px; min-height: 20px; }
       .bar { height: 6px; background: var(--line); border-radius: 99px; overflow: hidden; }
       .bar > i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width 0.2s; }
+      .bar.indeterminate > i { width: 35%; animation: drift 1.2s ease-in-out infinite; }
+      @keyframes drift { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
       .pct { font-size: 12px; color: var(--muted); margin-top: 8px; font-variant-numeric: tabular-nums; }
-      .doc { font-weight: 600; font-size: 15px; margin-bottom: 2px; word-break: break-word; }
+      .eta {
+        margin-top: 5px;
+        color: var(--ink);
+        font-size: 12.5px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .pct, .eta { overflow-wrap: anywhere; }
+      .doc { font-weight: 650; font-size: 15px; margin-bottom: 2px; word-break: break-word; }
       .meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
       .note { font-size: 13px; padding: 10px 12px; border-radius: 8px; margin-top: 12px; }
       .note.err { color: var(--err); border: 1px solid currentColor; }
@@ -96,180 +221,294 @@
       .note ul { margin: 6px 0 0; padding-left: 18px; }
       .foot { font-size: 12px; color: var(--muted); text-align: center; margin-top: 26px; }
       code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12.5px; }
+      @media (max-width: 560px) {
+        body { padding: 24px 14px 48px; }
+        .opts { grid-template-columns: 1fr; }
+        .row { align-items: stretch; flex-direction: column; }
+        .row button { width: 100%; }
+      }
     </style>
   </head>
   <body>
-    <div class="wrap">
-      <h1>drive-pdf-reader</h1>
-      <p class="sub">Rebuild a view-only Google Drive document as a PDF, then save it wherever you want.</p>
+    <main class="wrap">
+      <h1>PDF Capture Studio</h1>
+      <p class="sub">Turn a Drive document or the unique visual frames in a video into a downloadable PDF.</p>
 
-      <form class="card" id="form">
-        <label for="url">Google Drive link</label>
-        <input
-          type="text"
-          id="url"
-          placeholder="https://drive.google.com/file/d/.../view"
-          autocomplete="off"
-          spellcheck="false"
-          required
-        />
+      <nav class="tabs" role="tablist" aria-label="PDF source">
+        <button class="tab" id="drive-tab" role="tab" aria-selected="true" aria-controls="drive-panel">
+          Drive document
+        </button>
+        <button class="tab" id="video-tab" role="tab" aria-selected="false" aria-controls="video-panel">
+          Video to PDF
+        </button>
+      </nav>
 
-        <details>
-          <summary>Options</summary>
-          <div class="opts">
-            <div>
-              <label for="width">Width (px)</label>
-              <input type="number" id="width" value="1600" min="200" max="10000" step="100" />
+      <section id="drive-panel" role="tabpanel" aria-labelledby="drive-tab">
+        <form class="card" id="drive-form">
+          <p class="eyebrow">Drive document</p>
+          <h2>Rebuild a view-only PDF</h2>
+          <p class="intro">Paste a link that previews in Google Drive. The result stays local to this app.</p>
+
+          <label for="drive-url">Google Drive link</label>
+          <input
+            type="text"
+            id="drive-url"
+            placeholder="https://drive.google.com/file/d/.../view"
+            autocomplete="off"
+            spellcheck="false"
+            required
+          />
+
+          <details>
+            <summary>Options</summary>
+            <div class="opts">
+              <div>
+                <label for="drive-width">Width (px)</label>
+                <input type="number" id="drive-width" value="1600" min="200" max="10000" step="100" />
+              </div>
+              <div>
+                <label for="drive-quality">JPEG quality</label>
+                <input type="number" id="drive-quality" value="82" min="1" max="100" />
+              </div>
+              <div>
+                <label for="drive-concurrency">Concurrency</label>
+                <input type="number" id="drive-concurrency" value="8" min="1" max="64" />
+              </div>
+              <div style="display: flex; align-items: flex-end">
+                <label class="check" style="margin: 0 0 10px">
+                  <input type="checkbox" id="drive-png" />
+                  Lossless PNG (very large)
+                </label>
+              </div>
             </div>
-            <div>
-              <label for="quality">JPEG quality</label>
-              <input type="number" id="quality" value="82" min="1" max="100" />
-            </div>
-            <div>
-              <label for="concurrency">Concurrency</label>
-              <input type="number" id="concurrency" value="8" min="1" max="64" />
-            </div>
-            <div style="display: flex; align-items: flex-end">
-              <label class="check" style="margin: 0 0 10px">
-                <input type="checkbox" id="png" />
-                Lossless PNG (very large)
-              </label>
-            </div>
+          </details>
+
+          <div class="row"><button class="primary" type="submit" id="drive-go">Extract PDF</button></div>
+        </form>
+
+        <div class="card hidden" id="drive-progress">
+          <div class="status" id="drive-status">Starting…</div>
+          <div class="bar" id="drive-bar"><i id="drive-fill"></i></div>
+          <div class="pct" id="drive-pct"></div>
+        </div>
+
+        <div class="card hidden" id="drive-result">
+          <div class="doc" id="drive-docname"></div>
+          <div class="meta" id="drive-docmeta"></div>
+          <div id="drive-notes"></div>
+          <div class="row">
+            <button class="primary" id="drive-save" type="button">Save PDF…</button>
+            <button class="secondary" id="drive-again" type="button">Extract another</button>
           </div>
-        </details>
-
-        <div class="row">
-          <button type="submit" id="go">Extract PDF</button>
         </div>
-      </form>
 
-      <div class="card hidden" id="progress">
-        <div class="status" id="status">Starting…</div>
-        <div class="bar"><i id="fill"></i></div>
-        <div class="pct" id="pct"></div>
-      </div>
+        <div class="card note err hidden" id="drive-error"></div>
+      </section>
 
-      <div class="card hidden" id="result">
-        <div class="doc" id="docname"></div>
-        <div class="meta" id="docmeta"></div>
-        <div id="notes"></div>
-        <div class="row">
-          <button id="save">Save PDF…</button>
-          <button class="secondary" id="again" type="button">Extract another</button>
+      <section class="hidden" id="video-panel" role="tabpanel" aria-labelledby="video-tab">
+        <form class="card" id="video-form">
+          <p class="eyebrow">Video to PDF</p>
+          <h2>Capture every unique slide</h2>
+          <p class="intro">
+            Upload one or more recordings. The app samples them in the selected order, removes repeated visual
+            frames across every file, and creates one combined PDF.
+          </p>
+
+          <label class="filebox" id="video-drop" for="video-file">
+            <input type="file" id="video-file" multiple required />
+            <strong>Choose video files</strong> or drop them here
+            <span class="filename" id="video-filename">Common and professional formats supported by FFmpeg</span>
+          </label>
+          <ol class="filelist hidden" id="video-filelist" aria-label="Video processing order"></ol>
+          <p class="order-hint hidden" id="video-order-hint">Drag files to reorder them. The PDF follows this order.</p>
+
+          <details>
+            <summary>Detection options</summary>
+            <div class="opts">
+              <div>
+                <label for="video-interval">Sample every (seconds)</label>
+                <input type="number" id="video-interval" value="1" min="0.25" max="30" step="0.25" />
+                <p class="hint">Use 0.5 for very fast slide changes.</p>
+              </div>
+              <div>
+                <div class="range-head">
+                  <label for="video-sensitivity">Change sensitivity</label>
+                  <output id="video-sensitivity-value">7</output>
+                </div>
+                <input type="range" id="video-sensitivity" value="7" min="1" max="10" step="1" />
+                <p class="hint">Higher keeps subtler visual changes.</p>
+              </div>
+              <div>
+                <label for="video-width">Maximum frame width</label>
+                <input type="number" id="video-width" value="1920" min="320" max="7680" step="160" />
+              </div>
+              <div>
+                <label for="video-quality">PDF image quality</label>
+                <input type="number" id="video-quality" value="88" min="40" max="100" />
+              </div>
+            </div>
+          </details>
+
+          <div class="row"><button class="primary" type="submit" id="video-go">Create one combined PDF</button></div>
+          <p class="hint">Uploaded videos and temporary frames are deleted automatically after processing.</p>
+        </form>
+
+        <div class="card hidden" id="video-progress">
+          <div class="status" id="video-status">Uploading…</div>
+          <div class="bar" id="video-bar"><i id="video-fill"></i></div>
+          <div class="pct" id="video-pct"></div>
+          <div class="eta hidden" id="video-eta"></div>
         </div>
-      </div>
 
-      <div class="card note err hidden" id="error"></div>
+        <div class="card hidden" id="video-result">
+          <div class="doc" id="video-docname"></div>
+          <div class="meta" id="video-docmeta"></div>
+          <div class="note ok">Repeated frames were removed across all selected videos.</div>
+          <div class="row">
+            <button class="primary" id="video-save" type="button">Save PDF…</button>
+            <button class="secondary" id="video-again" type="button">Process another</button>
+          </div>
+        </div>
 
-      <p class="foot">Only extract documents you are permitted to retain.</p>
-    </div>
+        <div class="card note err hidden" id="video-error"></div>
+      </section>
+
+      <p class="foot">Only process documents and videos you are permitted to retain.</p>
+    </main>
 
     <script>
       const $ = (id) => document.getElementById(id);
-      const form = $('form');
-      let job = null;
-      let source = null;
+      const state = {
+        drive: { job: null, source: null },
+        video: { job: null, source: null },
+      };
+      let selectedVideoFiles = [];
+      let draggedVideoIndex = null;
+      let videoOrderingLocked = false;
 
-      const show = (el, on) => el.classList.toggle('hidden', !on);
-      const mb = (n) => (n / 1048576).toFixed(2) + ' MB';
+      const show = (element, on) => element.classList.toggle('hidden', !on);
+      const mb = (bytes) =>
+        bytes < 1048576
+          ? (bytes / 1024).toFixed(bytes < 10240 ? 1 : 0) + ' KB'
+          : (bytes / 1048576).toFixed(2) + ' MB';
+      const count = new Intl.NumberFormat();
 
-      function reset() {
-        show($('progress'), false);
-        show($('result'), false);
-        show($('error'), false);
-        $('fill').style.width = '0%';
-        $('pct').textContent = '';
-        $('notes').innerHTML = '';
-        job = null;
+      function formatDuration(seconds) {
+        if (!Number.isFinite(seconds) || seconds < 0) return 'unknown';
+        let remaining = Math.max(0, Math.round(seconds));
+        const days = Math.floor(remaining / 86400);
+        remaining %= 86400;
+        const hours = Math.floor(remaining / 3600);
+        remaining %= 3600;
+        const minutes = Math.floor(remaining / 60);
+        const secs = remaining % 60;
+        const parts = [];
+        if (days) parts.push(days + (days === 1 ? ' day' : ' days'));
+        if (hours || days) parts.push(hours + ' hr');
+        if (minutes || hours || days) parts.push(minutes + ' min');
+        parts.push(secs + ' sec');
+        return parts.join(' ');
       }
 
-      function fail(message) {
-        if (source) source.close();
-        show($('progress'), false);
-        $('error').textContent = message;
-        show($('error'), true);
-        $('go').disabled = false;
+      function estimateRemaining(startedAt, completed, total) {
+        const elapsedSeconds = (performance.now() - startedAt) / 1000;
+        if (elapsedSeconds < 1 || completed <= 0 || total <= 0) return null;
+        if (completed >= total) return 0;
+        return (elapsedSeconds * (total - completed)) / completed;
       }
 
-      form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        reset();
-        $('go').disabled = true;
-        show($('progress'), true);
-        $('status').textContent = 'Starting…';
+      function etaLine(seconds) {
+        if (seconds === null || !Number.isFinite(seconds)) return 'Calculating time remaining…';
+        if (seconds < 3) return 'Finishing now…';
+        const rounded = seconds > 60 ? Math.round(seconds / 5) * 5 : Math.round(seconds);
+        return 'About ' + formatDuration(rounded) + ' remaining';
+      }
 
-        const params = new URLSearchParams({
-          url: $('url').value.trim(),
-          width: $('width').value,
-          quality: $('quality').value,
-          concurrency: $('concurrency').value,
-          png: $('png').checked ? 'true' : 'false',
-        });
+      function selectTab(name) {
+        const drive = name === 'drive';
+        $('drive-tab').setAttribute('aria-selected', String(drive));
+        $('video-tab').setAttribute('aria-selected', String(!drive));
+        show($('drive-panel'), drive);
+        show($('video-panel'), !drive);
+      }
 
-        source = new EventSource('/api/extract?' + params);
+      $('drive-tab').addEventListener('click', () => selectTab('drive'));
+      $('video-tab').addEventListener('click', () => selectTab('video'));
 
-        source.onmessage = (ev) => {
-          const d = JSON.parse(ev.data);
+      function reset(kind) {
+        show($(kind + '-progress'), false);
+        show($(kind + '-result'), false);
+        show($(kind + '-error'), false);
+        $(kind + '-bar').classList.remove('indeterminate');
+        $(kind + '-fill').style.width = '0%';
+        $(kind + '-pct').textContent = '';
+        const eta = $(kind + '-eta');
+        if (eta) {
+          eta.textContent = '';
+          show(eta, false);
+        }
+        state[kind].job = null;
+        if (kind === 'drive') $('drive-notes').replaceChildren();
+      }
 
-          if (d.type === 'status') $('status').textContent = d.message;
+      function fail(kind, message) {
+        if (state[kind].source) state[kind].source.close();
+        state[kind].source = null;
+        show($(kind + '-progress'), false);
+        $(kind + '-error').textContent = message;
+        show($(kind + '-error'), true);
+        $(kind + '-go').disabled = false;
+        if (kind === 'video') {
+          videoOrderingLocked = false;
+          $('video-file').disabled = false;
+          renderVideoFiles();
+        }
+      }
 
-          if (d.type === 'document') {
-            $('status').textContent =
-              d.title + ' — ' + d.pages + ' pages at ' + d.renderWidth + 'px';
-          }
+      function setProgress(kind, message, percent, detail = '', etaText = '') {
+        show($(kind + '-progress'), true);
+        $(kind + '-status').textContent = message;
+        const bar = $(kind + '-bar');
+        if (percent === null) {
+          bar.classList.add('indeterminate');
+        } else {
+          bar.classList.remove('indeterminate');
+          $(kind + '-fill').style.width = Math.max(0, Math.min(100, percent)) + '%';
+        }
+        $(kind + '-pct').textContent = detail;
+        const eta = $(kind + '-eta');
+        if (eta) {
+          eta.textContent = etaText;
+          show(eta, Boolean(etaText));
+        }
+      }
 
-          if (d.type === 'progress') {
-            const pct = Math.round((d.done / d.total) * 100);
-            $('fill').style.width = pct + '%';
-            $('pct').textContent = d.done + ' / ' + d.total + ' pages (' + pct + '%)';
-          }
+      function addProblems(container, problems, failed) {
+        if (!problems || problems.length === 0) return;
+        const note = document.createElement('div');
+        note.className = 'note warn';
+        if (failed) {
+          const strong = document.createElement('strong');
+          strong.textContent = 'Verification failed. The result is marked partial.';
+          note.append(strong);
+        }
+        const list = document.createElement('ul');
+        for (const problem of problems) {
+          const item = document.createElement('li');
+          item.textContent = problem;
+          list.append(item);
+        }
+        note.append(list);
+        container.append(note);
+      }
 
-          if (d.type === 'assembling') {
-            $('status').textContent = 'Assembling PDF…';
-            $('fill').style.width = '100%';
-          }
-
-          if (d.type === 'error') fail(d.message);
-
-          if (d.type === 'done') {
-            source.close();
-            job = d;
-            show($('progress'), false);
-
-            $('docname').textContent = d.filename;
-            $('docmeta').textContent =
-              (d.pageCount !== null ? d.pageCount + ' pages · ' : '') +
-              mb(d.bytes) +
-              (d.fastPath ? ' · original file from Drive' : '');
-
-            if (!d.ok) {
-              const ul = d.problems.map((p) => '<li>' + p + '</li>').join('');
-              $('notes').innerHTML =
-                '<div class="note warn"><strong>Verification failed.</strong> Saved as ' +
-                '<code>.partial.pdf</code> so you can inspect it.<ul>' + ul + '</ul></div>';
-            } else if (d.problems.length) {
-              const ul = d.problems.map((p) => '<li>' + p + '</li>').join('');
-              $('notes').innerHTML = '<div class="note warn"><ul>' + ul + '</ul></div>';
-            }
-
-            show($('result'), true);
-            $('go').disabled = false;
-          }
-        };
-
-        source.onerror = () => {
-          if (!job) fail('Lost connection to the extractor. Is the server still running?');
-        };
-      });
-
-      $('save').addEventListener('click', async () => {
+      async function savePdf(kind) {
+        const job = state[kind].job;
         if (!job) return;
-        const res = await fetch('/api/file/' + job.jobId);
-        if (!res.ok) return fail('That result expired. Extract it again.');
-        const blob = await res.blob();
+        const response = await fetch('/api/file/' + job.jobId);
+        if (!response.ok) return fail(kind, 'That result expired. Create it again.');
+        const blob = await response.blob();
 
-        // The native Save As dialog. Chrome and Edge on localhost support this; anything
-        // else falls back to an ordinary download into the browser's download folder.
         if (window.showSaveFilePicker) {
           try {
             const handle = await window.showSaveFilePicker({
@@ -279,25 +518,435 @@
             const writable = await handle.createWritable();
             await writable.write(blob);
             await writable.close();
-            $('save').textContent = 'Saved ✓';
-            setTimeout(() => ($('save').textContent = 'Save PDF…'), 2500);
+            const button = $(kind + '-save');
+            button.textContent = 'Saved ✓';
+            setTimeout(() => (button.textContent = 'Save PDF…'), 2500);
             return;
-          } catch (err) {
-            if (err && err.name === 'AbortError') return; // user cancelled
+          } catch (error) {
+            if (error && error.name === 'AbortError') return;
           }
         }
 
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = job.filename;
-        a.click();
-        URL.revokeObjectURL(a.href);
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = job.filename;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      }
+
+      $('drive-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        reset('drive');
+        $('drive-go').disabled = true;
+        setProgress('drive', 'Starting…', 0);
+
+        const params = new URLSearchParams({
+          url: $('drive-url').value.trim(),
+          width: $('drive-width').value,
+          quality: $('drive-quality').value,
+          concurrency: $('drive-concurrency').value,
+          png: $('drive-png').checked ? 'true' : 'false',
+        });
+        const source = new EventSource('/api/extract?' + params);
+        state.drive.source = source;
+
+        source.onmessage = (message) => {
+          const data = JSON.parse(message.data);
+          if (data.type === 'status') setProgress('drive', data.message, null);
+          if (data.type === 'document') {
+            setProgress('drive', data.title + ' — ' + data.pages + ' pages at ' + data.renderWidth + 'px', 0);
+          }
+          if (data.type === 'progress') {
+            const percent = Math.round((data.done / data.total) * 100);
+            setProgress('drive', 'Capturing document pages…', percent, data.done + ' / ' + data.total + ' pages');
+          }
+          if (data.type === 'assembling') setProgress('drive', 'Assembling PDF…', 100);
+          if (data.type === 'error') fail('drive', data.message);
+
+          if (data.type === 'done') {
+            source.close();
+            state.drive.source = null;
+            state.drive.job = data;
+            show($('drive-progress'), false);
+            $('drive-docname').textContent = data.filename;
+            $('drive-docmeta').textContent =
+              (data.pageCount !== null ? data.pageCount + ' pages · ' : '') +
+              mb(data.bytes) +
+              (data.fastPath ? ' · original file from Drive' : '');
+            addProblems($('drive-notes'), data.problems, !data.ok);
+            show($('drive-result'), true);
+            $('drive-go').disabled = false;
+          }
+        };
+        source.onerror = () => {
+          if (!state.drive.job) fail('drive', 'Lost connection to the extractor. Is the server still running?');
+        };
       });
 
-      $('again').addEventListener('click', () => {
-        reset();
-        $('url').value = '';
-        $('url').focus();
+      function syncVideoInput() {
+        const input = $('video-file');
+        const transfer = new DataTransfer();
+        for (const file of selectedVideoFiles) transfer.items.add(file);
+        input.files = transfer.files;
+      }
+
+      function clearDropMarkers() {
+        for (const row of $('video-filelist').querySelectorAll('.file-row')) {
+          row.classList.remove('drop-before', 'drop-after');
+        }
+      }
+
+      function moveVideoFile(fromIndex, toIndex) {
+        if (videoOrderingLocked || fromIndex === toIndex) return;
+        if (fromIndex < 0 || fromIndex >= selectedVideoFiles.length) return;
+        const boundedTarget = Math.max(0, Math.min(selectedVideoFiles.length - 1, toIndex));
+        const [file] = selectedVideoFiles.splice(fromIndex, 1);
+        selectedVideoFiles.splice(boundedTarget, 0, file);
+        syncVideoInput();
+        renderVideoFiles();
+      }
+
+      function renderVideoFiles() {
+        const files = selectedVideoFiles;
+        const totalBytes = files.reduce((total, file) => total + file.size, 0);
+        $('video-filename').textContent =
+          files.length === 0
+            ? 'Common and professional formats supported by FFmpeg'
+            : files.length === 1
+            ? files[0].name + ' · ' + mb(totalBytes)
+            : files.length + ' videos selected · ' + mb(totalBytes);
+
+        const list = $('video-filelist');
+        list.replaceChildren();
+        files.forEach((file, index) => {
+          const item = document.createElement('li');
+          item.className = 'file-row';
+          item.dataset.index = String(index);
+          item.draggable = !videoOrderingLocked && files.length > 1;
+
+          const order = document.createElement('span');
+          order.className = 'file-order';
+          order.textContent = String(index + 1);
+
+          const handle = document.createElement('span');
+          handle.className = 'file-handle';
+          handle.textContent = '⋮⋮';
+          handle.title = videoOrderingLocked ? 'Order is locked while processing' : 'Drag to reorder';
+          handle.setAttribute('aria-hidden', 'true');
+
+          const copy = document.createElement('span');
+          copy.className = 'file-copy';
+          const name = document.createElement('span');
+          name.className = 'file-name';
+          const size = document.createElement('span');
+          size.className = 'file-size';
+          name.textContent = file.name;
+          size.textContent = mb(file.size);
+          copy.append(name, size);
+
+          const actions = document.createElement('span');
+          actions.className = 'file-actions';
+          const up = document.createElement('button');
+          up.className = 'order-button';
+          up.type = 'button';
+          up.textContent = '↑';
+          up.title = 'Move up';
+          up.setAttribute('aria-label', 'Move ' + file.name + ' up');
+          up.disabled = videoOrderingLocked || index === 0;
+          up.addEventListener('click', () => moveVideoFile(index, index - 1));
+
+          const down = document.createElement('button');
+          down.className = 'order-button';
+          down.type = 'button';
+          down.textContent = '↓';
+          down.title = 'Move down';
+          down.setAttribute('aria-label', 'Move ' + file.name + ' down');
+          down.disabled = videoOrderingLocked || index === files.length - 1;
+          down.addEventListener('click', () => moveVideoFile(index, index + 1));
+          actions.append(up, down);
+
+          item.addEventListener('dragstart', (event) => {
+            if (videoOrderingLocked) {
+              event.preventDefault();
+              return;
+            }
+            draggedVideoIndex = index;
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', String(index));
+            requestAnimationFrame(() => item.classList.add('dragging'));
+          });
+          item.addEventListener('dragover', (event) => {
+            if (videoOrderingLocked || draggedVideoIndex === null || draggedVideoIndex === index) return;
+            event.preventDefault();
+            clearDropMarkers();
+            const after = event.clientY > item.getBoundingClientRect().top + item.offsetHeight / 2;
+            item.classList.add(after ? 'drop-after' : 'drop-before');
+          });
+          item.addEventListener('dragleave', () => item.classList.remove('drop-before', 'drop-after'));
+          item.addEventListener('drop', (event) => {
+            event.preventDefault();
+            const sourceIndex = draggedVideoIndex ?? Number(event.dataTransfer.getData('text/plain'));
+            const after = event.clientY > item.getBoundingClientRect().top + item.offsetHeight / 2;
+            let targetIndex = index + (after ? 1 : 0);
+            if (sourceIndex < targetIndex) targetIndex -= 1;
+            clearDropMarkers();
+            draggedVideoIndex = null;
+            moveVideoFile(sourceIndex, targetIndex);
+          });
+          item.addEventListener('dragend', () => {
+            draggedVideoIndex = null;
+            item.classList.remove('dragging');
+            clearDropMarkers();
+          });
+
+          item.append(order, handle, copy, actions);
+          list.append(item);
+        });
+
+        show(list, files.length > 0);
+        const hint = $('video-order-hint');
+        hint.textContent = videoOrderingLocked
+          ? 'Order is locked while the PDF is being created.'
+          : 'Drag files to reorder them, or use the arrow buttons. The PDF follows this order.';
+        show(hint, files.length > 1);
+      }
+
+      function chooseVideos(fileList) {
+        if (videoOrderingLocked) return;
+        const files = Array.from(fileList || []);
+        if (files.length === 0) return;
+        selectedVideoFiles = files;
+        syncVideoInput();
+        renderVideoFiles();
+      }
+
+      $('video-file').addEventListener('change', () => chooseVideos($('video-file').files));
+      $('video-sensitivity').addEventListener('input', () => {
+        $('video-sensitivity-value').textContent = $('video-sensitivity').value;
+      });
+
+      const drop = $('video-drop');
+      for (const name of ['dragenter', 'dragover']) {
+        drop.addEventListener(name, (event) => {
+          event.preventDefault();
+          drop.classList.add('drag');
+        });
+      }
+      for (const name of ['dragleave', 'drop']) {
+        drop.addEventListener(name, (event) => {
+          event.preventDefault();
+          drop.classList.remove('drag');
+        });
+      }
+      drop.addEventListener('drop', (event) => chooseVideos(event.dataTransfer.files));
+
+      function uploadVideo(file, onProgress) {
+        return new Promise((resolve, reject) => {
+          const request = new XMLHttpRequest();
+          request.open('POST', '/api/video/upload?filename=' + encodeURIComponent(file.name));
+          request.setRequestHeader('content-type', 'application/octet-stream');
+          request.upload.onprogress = (event) => {
+            onProgress(event.loaded, event.lengthComputable ? event.total : file.size);
+          };
+          request.onerror = () => reject(new Error('The video upload failed.'));
+          request.onload = () => {
+            let body = {};
+            try { body = JSON.parse(request.responseText); } catch {}
+            if (request.status >= 200 && request.status < 300) resolve(body);
+            else reject(new Error(body.error || 'The video upload failed.'));
+          };
+          request.send(file);
+        });
+      }
+
+      $('video-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const files = selectedVideoFiles.length
+          ? [...selectedVideoFiles]
+          : Array.from($('video-file').files || []);
+        if (files.length === 0) return fail('video', 'Choose at least one video file first.');
+
+        reset('video');
+        $('video-go').disabled = true;
+        videoOrderingLocked = true;
+        $('video-file').disabled = true;
+        renderVideoFiles();
+        try {
+          const totalUploadBytes = files.reduce((total, file) => total + file.size, 0);
+          const uploads = [];
+          let completedUploadBytes = 0;
+          const uploadStartedAt = performance.now();
+
+          for (let index = 0; index < files.length; index += 1) {
+            const file = files[index];
+            const uploaded = await uploadVideo(file, (loaded) => {
+              const totalLoaded = completedUploadBytes + loaded;
+              const uploadFraction = totalUploadBytes > 0 ? totalLoaded / totalUploadBytes : 0;
+              const uploadPercent = Math.round(uploadFraction * 100);
+              const overallPercent = Math.round(uploadFraction * 10);
+              const uploadEta = estimateRemaining(uploadStartedAt, totalLoaded, totalUploadBytes);
+              setProgress(
+                'video',
+                'Uploading video ' + (index + 1) + ' of ' + files.length +
+                  ' · ' + overallPercent + '% overall',
+                overallPercent,
+                file.name + ' · ' + uploadPercent + '% uploaded',
+                etaLine(uploadEta),
+              );
+            });
+            uploads.push(uploaded);
+            completedUploadBytes += file.size;
+          }
+
+          const params = new URLSearchParams({
+            sampleSeconds: $('video-interval').value,
+            sensitivity: $('video-sensitivity').value,
+            maxWidth: $('video-width').value,
+            quality: $('video-quality').value,
+          });
+          for (const upload of uploads) params.append('uploadId', upload.uploadId);
+          const processingStartedAt = performance.now();
+          const decodingStarts = new Map();
+          const analyzingStarts = new Map();
+          const fileOffsets = [];
+          let offset = 0;
+          for (const file of files) {
+            fileOffsets.push(offset);
+            offset += file.size;
+          }
+          const batchFraction = (fileIndex, fileFraction) =>
+            totalUploadBytes > 0
+              ? (fileOffsets[fileIndex] + files[fileIndex].size * fileFraction) / totalUploadBytes
+              : (fileIndex + fileFraction) / files.length;
+          let lastOverallPercent = 10;
+
+          const source = new EventSource('/api/video/extract?' + params);
+          state.video.source = source;
+          setProgress(
+            'video',
+            'Preparing videos…',
+            lastOverallPercent,
+            '',
+            'Calculating time remaining…',
+          );
+
+          source.onmessage = (message) => {
+            const data = JSON.parse(message.data);
+            if (data.type === 'video-status') {
+              if (data.message.startsWith('Decoding') && !decodingStarts.has(data.fileIndex)) {
+                decodingStarts.set(data.fileIndex, performance.now());
+              }
+              if (data.message.startsWith('Finding') && !analyzingStarts.has(data.fileIndex)) {
+                analyzingStarts.set(data.fileIndex, performance.now());
+              }
+              setProgress(
+                'video',
+                'Preparing video ' + ((data.fileIndex || 0) + 1) + ' of ' +
+                  (data.fileCount || files.length) + '…',
+                lastOverallPercent,
+                '',
+                'Calculating time remaining…',
+              );
+            }
+            if (data.type === 'video-progress' && data.stage === 'decoding') {
+              const fileIndex = data.fileIndex || 0;
+              const fileCount = data.fileCount || files.length;
+              const localPercent = data.percent === null ? 0 : data.percent;
+              const videoWorkFraction = (localPercent / 100) * 0.65;
+              const processedFraction = batchFraction(fileIndex, videoWorkFraction);
+              const overallPercent = Math.round(10 + processedFraction * 85);
+              lastOverallPercent = Math.max(lastOverallPercent, overallPercent);
+              const startedAt = decodingStarts.get(fileIndex) || processingStartedAt;
+              const stageEta = data.durationSeconds
+                ? estimateRemaining(startedAt, data.seconds, data.durationSeconds)
+                : null;
+              const overallEta = estimateRemaining(processingStartedAt, processedFraction, 1);
+              const detail = data.durationSeconds
+                ? data.filename + ' · ' + localPercent + '% of this video completed'
+                : data.filename;
+              const etaText = etaLine(overallEta === null ? stageEta : overallEta);
+              setProgress(
+                'video',
+                'Processing video ' + (fileIndex + 1) + ' of ' + fileCount +
+                  ' · ' + lastOverallPercent + '% overall',
+                lastOverallPercent,
+                detail,
+                etaText,
+              );
+            }
+            if (data.type === 'video-progress' && data.stage === 'analyzing') {
+              const fileIndex = data.fileIndex || 0;
+              const fileCount = data.fileCount || files.length;
+              const fileFraction = data.total > 0 ? data.done / data.total : 0;
+              const videoWorkFraction = 0.65 + fileFraction * 0.35;
+              const processedFraction = batchFraction(fileIndex, videoWorkFraction);
+              const overallPercent = Math.round(10 + processedFraction * 85);
+              lastOverallPercent = Math.max(lastOverallPercent, overallPercent);
+              const startedAt = analyzingStarts.get(fileIndex) || performance.now();
+              if (!analyzingStarts.has(fileIndex)) analyzingStarts.set(fileIndex, startedAt);
+              const stageEta = estimateRemaining(startedAt, data.done, data.total);
+              const overallEta = estimateRemaining(processingStartedAt, processedFraction, 1);
+              const etaText = etaLine(overallEta === null ? stageEta : overallEta);
+              setProgress(
+                'video',
+                'Finding slides · video ' + (fileIndex + 1) + ' of ' + fileCount +
+                  ' · ' + lastOverallPercent + '% overall',
+                lastOverallPercent,
+                data.filename + ' · ' + Math.round(fileFraction * 100) +
+                  '% of this video completed · ' + count.format(data.unique) + ' unique slides',
+                etaText,
+              );
+            }
+            if (data.type === 'video-assembling') {
+              lastOverallPercent = Math.max(lastOverallPercent, 98);
+              setProgress(
+                'video',
+                'Building ' + count.format(data.pages) + '-page PDF · ' + lastOverallPercent + '% overall',
+                lastOverallPercent,
+                '',
+                'Almost done…',
+              );
+            }
+            if (data.type === 'error') fail('video', data.message);
+
+            if (data.type === 'done') {
+              source.close();
+              state.video.source = null;
+              state.video.job = data;
+              show($('video-progress'), false);
+              $('video-docname').textContent = data.filename;
+              $('video-docmeta').textContent =
+                data.fileCount + (data.fileCount === 1 ? ' video · ' : ' videos · ') +
+                count.format(data.pageCount) + ' unique slides · ' + mb(data.bytes) + ' PDF';
+              show($('video-result'), true);
+              $('video-go').disabled = false;
+              videoOrderingLocked = false;
+              $('video-file').disabled = false;
+              renderVideoFiles();
+            }
+          };
+          source.onerror = () => {
+            if (!state.video.job) fail('video', 'Lost connection while processing the video.');
+          };
+        } catch (error) {
+          fail('video', error instanceof Error ? error.message : String(error));
+        }
+      });
+
+      $('drive-save').addEventListener('click', () => void savePdf('drive'));
+      $('video-save').addEventListener('click', () => void savePdf('video'));
+      $('drive-again').addEventListener('click', () => {
+        reset('drive');
+        $('drive-url').value = '';
+        $('drive-url').focus();
+      });
+      $('video-again').addEventListener('click', () => {
+        reset('video');
+        videoOrderingLocked = false;
+        selectedVideoFiles = [];
+        $('video-file').value = '';
+        $('video-file').disabled = false;
+        renderVideoFiles();
       });
     </script>
   </body>

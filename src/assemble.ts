@@ -21,7 +21,15 @@ import type { CapturedPage } from './types.ts';
 
 const PDF_PRODUCER = 'drive-pdf (tools/drive-pdf)' as const;
 
-export async function assemblePdf(pages: CapturedPage[]): Promise<Uint8Array> {
+export interface PdfMetadata {
+  title?: string;
+  producer?: string;
+}
+
+export async function assemblePdf(
+  pages: CapturedPage[],
+  metadata: PdfMetadata = {},
+): Promise<Uint8Array> {
   if (pages.length === 0) {
     throw new Error('assemblePdf: no pages to assemble - the capture stage returned an empty set.');
   }
@@ -30,9 +38,9 @@ export async function assemblePdf(pages: CapturedPage[]): Promise<Uint8Array> {
   const ordered = [...pages].sort((a, b) => a.index - b.index);
 
   const doc = await PDFDocument.create();
-  doc.setTitle('Drive document');
-  doc.setProducer(PDF_PRODUCER);
-  doc.setCreator(PDF_PRODUCER);
+  doc.setTitle(metadata.title ?? 'Drive document');
+  doc.setProducer(metadata.producer ?? PDF_PRODUCER);
+  doc.setCreator(metadata.producer ?? PDF_PRODUCER);
   doc.setCreationDate(new Date());
 
   for (const page of ordered) {
